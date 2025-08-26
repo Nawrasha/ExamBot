@@ -1,0 +1,9 @@
+streamlit 
+PyPDF2
+langchain-community
+google.generativeai
+langchain_google_genai
+faiss-cpu
+streamlit-audio-recorder
+SpeechRecognition
+pyaudio
