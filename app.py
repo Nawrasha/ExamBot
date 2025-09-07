@@ -317,8 +317,6 @@ def main():
                     chunks = get_text_chunks(text)
                     get_vector_store(chunks)
                     st.success("✅ PDF indexés et vector store sauvegardé.")
-        if st.button("Clear Chat"):
-            st.session_state.chat_history = []
         st.markdown("---")
         st.markdown("Utilise l'onglet **QCM** pour générer et passer un examen blanc.")
 
@@ -328,6 +326,8 @@ def main():
     with tabs[0]:
         st.subheader("Chat (poser une question sur les PDFs indexés)")
         user_question = st.chat_input("Ask a question about the PDFs...")
+        if st.button("Clear Chat"):
+            st.session_state.chat_history = []
         if user_question:
             with st.spinner("Processing..."):
                 try:
@@ -338,7 +338,6 @@ def main():
                     st.error(f"Erreur QA: {e}")
         for role, text in st.session_state.chat_history:
             st.markdown(f"<div class='user-msg'>{text}</div>" if role=="You" else f"<div class='bot-msg'>{text}</div>", unsafe_allow_html=True)
-
     # --- QCM Tab ---
     with tabs[1]:
         st.subheader("Générateur de QCM")
