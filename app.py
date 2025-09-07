@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 import json
 import re
 import time
+import uuid
+
 
 load_dotenv()
 os.getenv("GOOGLE_API_KEY")
@@ -158,6 +160,131 @@ def run_qa_chain(user_question):
     response = chain.run({"context": context, "question": user_question})
     return response
 
+
+# generate summary
+def generate_summary_from_vectorstore(k_chunks=8, model_name="gemini-2.0-flash"):
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    try:
+        db = FAISS.load_local("vector_store", embeddings, allow_dangerous_deserialization=True)
+    except Exception as e:
+        st.error("Vector store introuvable. Upload et cliquez sur 'Submit' d'abord.")
+        return ""
+
+    docs = db.similarity_search("important points for making a summary", k=k_chunks)
+    context = "\n\n".join([d.page_content for d in docs])
+    if not context.strip():
+        st.error("Contexte insuffisant pour générer un résumé.")
+        return ""
+
+    prompt_template = PromptTemplate(
+    input_variables=["context"],
+    template="""
+Tu es un assistant qui résume les documents PDF fournis. 
+Fais un résumé **structuré** et **clair** du contenu suivant : 
+
+{context}
+
+Consignes :
+- Utilise des grands titres (ex : 1. Introduction, 2. Concepts clés, 3. Applications, 4. Conclusion)
+- Pour chaque grand titre, ajoute des sous-titres si nécessaire.
+- Résume les informations importantes sous forme de phrases concises.
+- Ne fais pas de JSON, juste un texte bien organisé avec titres et sous-titres.
+- Sois synthétique mais complet.
+"""
+    )
+
+
+    model = ChatGoogleGenerativeAI(model=model_name, temperature=0.2)
+    chain = LLMChain(llm=model, prompt=prompt_template)
+
+    raw = chain.run({"context": context})
+    summary = raw.strip()
+
+
+    return summary
+
+
+
+
+def generate_open_questions_from_vectorstore(n_questions=5, k_chunks=8, model_name="gemini-2.0-flash", difficulty="Moyen"):
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    try:
+        db = FAISS.load_local("vector_store", embeddings, allow_dangerous_deserialization=True)
+    except Exception:
+        st.error("Vector store introuvable. Upload et cliquez sur 'Submit' d'abord.")
+        return []
+
+    docs = db.similarity_search("important points for exam open questions", k=k_chunks)
+    context = "\n\n".join([d.page_content for d in docs])
+    if not context.strip():
+        st.error("Contexte insuffisant pour générer des questions ouvertes.")
+        return []
+
+    prompt_template = PromptTemplate(
+        input_variables=["context", "n", "difficulty"],
+        template="""
+Tu es un assistant qui génère des questions ouvertes pour préparer un examen.
+Crée exactement {n} questions ouvertes basées uniquement sur le contexte fourni, 
+avec un niveau de difficulté {difficulty}.
+Retourne un JSON array avec chaque question sous la forme :
+{{"id": 1, "question": "texte de la question", "model_answer": "réponse courte attendue"}}
+
+Contexte : {context}
+"""
+    )
+
+    model = ChatGoogleGenerativeAI(model=model_name, temperature=0.2)
+    chain = LLMChain(llm=model, prompt=prompt_template)
+    raw = chain.run({"context": context, "n": n_questions, "difficulty": difficulty})
+
+    try:
+        questions = json.loads(raw)
+    except Exception:
+        m = re.search(r"\[.*\]", raw, re.S)
+        questions = json.loads(m.group(0)) if m else []
+
+    return questions
+
+
+# évaluation des réponses ouvertes
+
+def validate_open_answer(user_ans, model_ans, question, model_name="gemini-2.0-flash"):
+    """
+    Utilise Gemini pour évaluer si la réponse utilisateur est correcte.
+    Retourne True/False et un commentaire.
+    """
+    prompt_template = PromptTemplate(
+        input_variables=["question", "model_ans", "user_ans"],
+        template="""
+            Tu es un correcteur automatique pour des questions ouvertes d'examen.
+            Question: {question}
+            Réponse attendue: {model_ans}
+            Réponse de l'étudiant: {user_ans}
+
+            Évalue si la réponse de l'étudiant est correcte.
+            Réponds STRICTEMENT en JSON, uniquement avec des double quotes.
+            Format exact attendu:
+            {{"is_correct": true/false, "comment": "explication courte"}}
+            Ne mets rien en dehors du JSON.
+            """
+            )
+    model = ChatGoogleGenerativeAI(model=model_name, temperature=0)
+    chain = LLMChain(llm=model, prompt=prompt_template)
+    raw = chain.run({"question": question, "model_ans": model_ans, "user_ans": user_ans})
+
+    m = re.search(r"\{.*\}", raw, re.S)
+    if m:
+        try:
+            result = json.loads(m.group(0))
+        except:
+            result = {"is_correct": False, "comment": "Impossible d'évaluer"}
+    else:
+        result = {"is_correct": False, "comment": "Impossible d'évaluer"}
+    return result["is_correct"], result["comment"]
+
+
+
+
 # -----------------------
 # Main UI
 # -----------------------
@@ -195,7 +322,7 @@ def main():
         st.markdown("---")
         st.markdown("Utilise l'onglet **QCM** pour générer et passer un examen blanc.")
 
-    tabs = st.tabs(["Chat (QA)", "QCM Generator"])
+    tabs = st.tabs(["Chat (QA)", "QCM Generator"," Résumé", "Questions ouvertes"])
 
     # --- Chat Tab ---
     with tabs[0]:
@@ -267,6 +394,101 @@ def main():
                         st.markdown("---")
             if st.download_button("⬇️ Télécharger le quiz (JSON)", json.dumps(quiz, ensure_ascii=False, indent=2), file_name="quiz.json"):
                 st.success("Quiz téléchargé.")
+    # --- Resume Tab ---
+    with tabs[2]:
+        st.subheader("Générateur de résumé à partir des PDFs indexés")
+
+        if st.button("Générer Résumé"):
+            with st.spinner("Génération du résumé..."):
+                summary = generate_summary_from_vectorstore()
+                if summary:
+                    st.session_state.current_summary = summary
+                    st.success("Résumé généré avec succès !")
+                else:
+                    st.error("Impossible de générer le résumé.")
+
+        if "current_summary" in st.session_state:
+            st.markdown(st.session_state.current_summary, unsafe_allow_html=True)
+
+            if st.download_button("⬇️ Télécharger le résumé", st.session_state.current_summary, file_name="resume.txt"):
+                st.success("Résumé téléchargé.")
+    with tabs[3]:  # onglet "Questions ouvertes"
+        st.subheader("Préparation examens : Questions ouvertes")
+
+        num_open_q = st.number_input("Nombre de questions ouvertes à générer", min_value=3, max_value=20, value=5)
+        difficulty_open = st.selectbox(
+        "Sélectionne le niveau de difficulté pour les questions ouvertes",
+        ["Facile", "Moyen", "Difficile"]
+        )
+
+        if st.button("Générer Questions ouvertes"):
+            with st.spinner("Génération des questions..."):
+                open_questions = generate_open_questions_from_vectorstore(
+                    n_questions=num_open_q,
+                    k_chunks=8,
+                    model_name="gemini-2.0-flash",
+                    difficulty=difficulty_open  # nouveau paramètre
+                )
+                if open_questions:
+                    st.session_state.open_questions = open_questions
+                    st.session_state.open_answers = {qid: "" for qid in [q["id"] for q in open_questions]}
+                    st.success(f"{len(open_questions)} questions ouvertes générées ({difficulty_open}).")
+                else:
+                    st.error("Impossible de générer des questions ouvertes.")
+
+        if "open_questions" in st.session_state:
+            suffix = st.session_state.get("open_key_suffix", "")
+            for q in st.session_state.open_questions:
+                qid = q["id"]
+                st.markdown(f"**Q{qid}. {q['question']}**")
+                # Clé unique = id + suffix
+                st.session_state.open_answers[qid] = st.text_area(
+                    "Votre réponse :",
+                    key=f"open_{qid}_{suffix}",
+                    height=150,
+                    value=""  # vide par défaut
+                )
+                st.markdown("---")
+            if st.button("Soumettre mes réponses"):
+                feedback_list = []
+                for q in st.session_state.open_questions:
+                    qid = q["id"]
+                    user_ans = st.session_state.open_answers.get(qid, "").strip()
+                    model_ans = q.get("model_answer", "").strip()
+
+                    if not user_ans:
+                        is_correct = False
+                        comment = "Réponse vide"
+                    else:
+                        is_correct, comment = validate_open_answer(user_ans, model_ans, q["question"])
+
+                    feedback_list.append({
+                        "id": qid,
+                        "question": q["question"],
+                        "your_answer": user_ans,
+                        "model_answer": model_ans,
+                        "is_correct": is_correct,
+                        "comment": comment
+                    })
+
+                # score global
+                total = len(feedback_list)
+                correct = len([f for f in feedback_list if f["is_correct"]])
+                pct = round((correct/total)*100) if total>0 else 0
+                st.success(f"Score : {correct}/{total} — {pct}%")
+
+                # feedback détaillé
+                st.subheader("Feedback détaillé")
+                for f in feedback_list:
+                    st.write(f"**Q{f['id']}. {f['question']}**")
+                    st.markdown(f"- **Votre réponse**: {f['your_answer']}")
+                    st.markdown(f"- **Réponse attendue**: {f['model_answer']}")
+                    st.markdown(f"- **Correct**: {'✅' if f['is_correct'] else '❌'}")
+                    st.markdown(f"- **Commentaire**: {f['comment']}")
+                    st.markdown("---")
+
+
+
 
 if __name__ == "__main__":
     main()
