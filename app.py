@@ -12,6 +12,7 @@ import json
 import re
 import time
 import uuid
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 
 load_dotenv()
@@ -37,7 +38,10 @@ def get_text_chunks(text):
     return chunks
 
 def get_vector_store(chunks):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"}
+)
     vector_store = FAISS.from_texts(chunks, embeddings)
     vector_store.save_local("vector_store")
     return vector_store
@@ -45,8 +49,11 @@ def get_vector_store(chunks):
 # -----------------------
 # QCM generation using Gemini through LangChain wrapper
 # -----------------------
-def generate_qcm_from_vectorstore(n_questions=10, k_chunks=8, difficulty="Moyen", model_name="gemini-2.0-flash"):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+def generate_qcm_from_vectorstore(n_questions=10, k_chunks=8, difficulty="Moyen", model_name="gemini-2.0-flash-exp"):
+    embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"}
+)
     try:
         db = FAISS.load_local("vector_store", embeddings, allow_dangerous_deserialization=True)
     except Exception as e:
@@ -144,7 +151,10 @@ def compute_score_and_feedback(quiz, session_state):
 # QA chain for Tab1
 # -----------------------
 def run_qa_chain(user_question):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"}
+)
     new_db = FAISS.load_local("vector_store", embeddings, allow_dangerous_deserialization=True)
     docs = new_db.similarity_search(user_question)
     prompt_template= """  answer the question as detailed as possible from the provided context, make sure to provide all
@@ -153,7 +163,7 @@ def run_qa_chain(user_question):
     context: {context} \n\n
     question: {question} \n\n Answer in English:"""
 
-    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash",temperature=0.2)
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp",temperature=0.2)
     prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
     chain = LLMChain(llm=model, prompt=prompt)
     context = "\n\n".join([d.page_content for d in docs])
@@ -162,8 +172,11 @@ def run_qa_chain(user_question):
 
 
 # generate summary
-def generate_summary_from_vectorstore(k_chunks=8, model_name="gemini-2.0-flash"):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+def generate_summary_from_vectorstore(k_chunks=8, model_name="gemini-2.0-flash-exp"):
+    embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"}
+)
     try:
         db = FAISS.load_local("vector_store", embeddings, allow_dangerous_deserialization=True)
     except Exception as e:
@@ -206,8 +219,11 @@ Consignes :
 
 
 
-def generate_open_questions_from_vectorstore(n_questions=5, k_chunks=8, model_name="gemini-2.0-flash", difficulty="Moyen"):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+def generate_open_questions_from_vectorstore(n_questions=5, k_chunks=8, model_name="gemini-2.0-flash-exp", difficulty="Moyen"):
+    embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"}
+)
     try:
         db = FAISS.load_local("vector_store", embeddings, allow_dangerous_deserialization=True)
     except Exception:
@@ -248,7 +264,7 @@ Contexte : {context}
 
 # évaluation des réponses ouvertes
 
-def validate_open_answer(user_ans, model_ans, question, model_name="gemini-2.0-flash"):
+def validate_open_answer(user_ans, model_ans, question, model_name="gemini-2.0-flash-exp"):
     """
     Utilise Gemini pour évaluer si la réponse utilisateur est correcte.
     Retourne True/False et un commentaire.
@@ -425,7 +441,7 @@ def main():
                 open_questions = generate_open_questions_from_vectorstore(
                     n_questions=num_open_q,
                     k_chunks=8,
-                    model_name="gemini-2.0-flash",
+                    model_name="gemini-2.0-flash-exp",
                     difficulty=difficulty_open  # nouveau paramètre
                 )
                 if open_questions:
@@ -562,7 +578,7 @@ if __name__ == "__main__":
 
 
 # def get_vector_store(chunks):
-#     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+#     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 #     vector_store = FAISS.from_texts(chunks, embeddings)
 #     vector_store.save_local("vector_store")
     
@@ -574,7 +590,7 @@ if __name__ == "__main__":
 #     context: {context} \n\n
 #     question: {question} \n\n Answer in English:"""
 
-#     model=ChatGoogleGenerativeAI(model="gemini-2.0-flash",temperature=0.2)
+#     model=ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp-exp-exp",temperature=0.2)
 #     prompt=PromptTemplate(template=prompt_template, input_variables=["context", "question"])
 #     chain =load_qa_chain(llm=model, prompt=prompt, chain_type="stuff")
 #     return chain
