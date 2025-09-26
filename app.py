@@ -323,7 +323,7 @@ def main():
 
     with st.sidebar:
         st.title("Téléverse tes fichiers PDF pour créer un QCM/examen")
-        pdf_docs = st.file_uploader("", type=["pdf"], accept_multiple_files=True)
+        pdf_docs = st.file_uploader("Load PDF files", type=["pdf"], accept_multiple_files=True)
         if st.button("Submit PDFs"):
             if not pdf_docs:
                 st.warning("Aucun PDF uploadé.")
