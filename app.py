@@ -12,7 +12,7 @@ import json
 import re
 import time
 import uuid
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 
 load_dotenv()
@@ -436,7 +436,7 @@ def main():
         ["Facile", "Moyen", "Difficile"]
         )
 
-        if st.button("Générer Questions ouvertes"):
+        if st.button("Générer Questions ouvertes", key="generate_open_questions"):
             with st.spinner("Génération des questions..."):
                 open_questions = generate_open_questions_from_vectorstore(
                     n_questions=num_open_q,
@@ -464,7 +464,7 @@ def main():
                     value=""  # vide par défaut
                 )
                 st.markdown("---")
-            if st.button("Soumettre mes réponses"):
+            if st.button("Soumettre mes réponses", key="submit_open_answers"):
                 feedback_list = []
                 for q in st.session_state.open_questions:
                     qid = q["id"]
